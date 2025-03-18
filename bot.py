@@ -1,40 +1,43 @@
 import os
 from typing import List
-from openai import OpenAI
-from slack_bolt import App
+
 from dotenv import load_dotenv
-from openai.types.responses.response_output_message import ResponseOutputMessage
+from slack_bolt import App
+
+from providers import OpenAIProvider, VertexProvider
 
 load_dotenv()
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-INSTRUCTIONS =  os.environ.get("INSTRUCTIONS")
+VERTEX_PROJECT_ID = os.environ.get("VERTEX_PROJECT_ID")
+INSTRUCTIONS = os.environ.get("INSTRUCTIONS")
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "openai").lower()
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Initialize the appropriate AI provider
+if AI_PROVIDER == "openai":
+    ai_provider = OpenAIProvider(api_key=OPENAI_API_KEY)
+elif AI_PROVIDER == "vertex":
+    ai_provider = VertexProvider(project_id=VERTEX_PROJECT_ID)
+else:
+    raise ValueError(f"Unsupported AI provider: {AI_PROVIDER}")
+
 app = App(
     token=SLACK_BOT_TOKEN,
     signing_secret=SLACK_SIGNING_SECRET
 )
 
-def process_response_output(output: List) -> str:
-    for response_object in output:
-        if type(response_object) == ResponseOutputMessage:
-            return response_object.content[0].text
-
 @app.event("app_mention")
 def handle_mention(event, say):
     text_input = event["text"]
     try:
-        response = client.responses.create(
-            model="gpt-4o",
+        response = ai_provider.generate(
+            input_text=text_input,
             tools=[{"type": "web_search_preview"}],
-            tool_choice="auto",
-            input=text_input,
             instructions=INSTRUCTIONS
         )
-        say(process_response_output(response.output))
+        say(response)
     except Exception as e:
         say(f"An error occurred: {e}")
 
